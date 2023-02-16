@@ -2,4 +2,4 @@
 # embedded into the Go binary. This folder must be existent in order to compile
 # the app at all, but it can be empty if you want to serve the frontend from
 # the React server during development.
-*
+frontend/*

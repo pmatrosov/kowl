@@ -32,13 +32,14 @@ func (api *API) routes() *chi.Mux {
 	instrument := middleware.NewInstrument(api.Cfg.MetricsNamespace)
 	recoverer := middleware.Recoverer{Logger: api.Logger}
 	checkOriginFn := originsCheckFunc(api.Cfg.REST.AllowedOrigins)
-	handleBasePath := createHandleBasePathMiddleware(api.Cfg.REST.BasePath,
+	basePath := newBasePathMiddleware(
+		api.Cfg.REST.BasePath,
 		api.Cfg.REST.SetBasePathFromXForwardedPrefix,
 		api.Cfg.REST.StripPrefix)
 
 	baseRouter.Use(recoverer.Wrap)
 	baseRouter.Use(chimiddleware.RealIP)
-	baseRouter.Use(handleBasePath)
+	baseRouter.Use(basePath.Wrap)
 	baseRouter.Use(cors.Handler(cors.Options{
 		AllowOriginFunc: func(r *http.Request, _ string) bool {
 			return checkOriginFn(r)
@@ -149,7 +150,7 @@ func (api *API) routes() *chi.Mux {
 				r.Post("/kafka-connect/clusters/{clusterName}/connectors/{connector}/restart", api.handleRestartConnector())
 				r.Post("/kafka-connect/clusters/{clusterName}/connectors/{connector}/tasks/{taskID}/restart", api.handleRestartConnectorTask())
 
-				// Console Endpoints
+				// Console Endpoints that inform which endpoints & features are available to the frontend.
 				r.Get("/console/endpoints", api.handleGetEndpoints())
 			})
 		})

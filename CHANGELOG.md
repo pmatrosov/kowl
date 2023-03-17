@@ -1,14 +1,26 @@
 # Changelog
 
-## To be released
+## v2.2.1 / 2023-03-03
+
+- [ENHACEMENT] Build with Go v1.20
+- [BUGFIX] Show guessed Kafka version on new overview page
+- [BUGFIX] Reduce number of properties shown in stats bar topics & consumer groups page to minimize required browser width
+- [BUGFIX] Escape all URL & query parameters. Consumer groups or Kafka connectors with special characters will no longer fail in Console
+
+## v2.2.0 / 2023-02-17
 
 - [FEATURE] Editing topic configurations
 - [FEATURE] Rework brokers page into a new overview page
+- [ENHACEMENT] Visual update towards a new Redpanda UI theme
 - [CHANGE] We removed the support for using encrypted PEM certificates as specified in RFC 1423 because it's insecure by design and should not be used by anyone
 - [BUGFIX] Enforce CORS-checks on websocket connection. Defaults to a same-site policy. Allowed origins are configurable via `server.allowedOrigins`
+- [BUGFIX] Emit Protobuf default values when viewing the JSON-rendered records in the message viewer
+- [BUGFIX] The `server.basePath` option to host Console under a different sub-path was malfunctioning and has been fixed
+- [BUGFIX] The schema registry and redpanda admin api client were not using the system's cert pool by default, this has been changed
 
 **Enterprise changelog**
 
+- [FEATURE] We added a new login provider (plain) for username-password authentication
 - [BUGFIX] Fix issues with generic OIDC provider when using self-signed or mutual TLS certificates
 
 ## v2.1.1 / 2022-12-01

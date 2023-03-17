@@ -51,7 +51,7 @@ class GroupDetails extends PageComponent<{ groupId: string }> {
     }
 
     initPage(p: PageInitHelper): void {
-        const group = this.props.groupId;
+        const group = decodeURIComponent(this.props.groupId);
 
         p.title = this.props.groupId;
         p.addBreadcrumb('Consumer Groups', '/groups');
@@ -62,8 +62,9 @@ class GroupDetails extends PageComponent<{ groupId: string }> {
     }
 
     refreshData(force: boolean) {
-        api.refreshConsumerGroup(this.props.groupId, force);
-        api.refreshConsumerGroupAcls(this.props.groupId, force);
+        const group = decodeURIComponent(this.props.groupId);
+        api.refreshConsumerGroup(group, force);
+        api.refreshConsumerGroupAcls(group, force);
     }
 
     renderPartitions(group: GroupDescription) {
@@ -125,7 +126,6 @@ class GroupDetails extends PageComponent<{ groupId: string }> {
         if (!group) return DefaultSkeleton;
 
         // Get info about each topic
-        const requiredTopics = group.members.flatMap((m) => m.assignments.map((a) => a.topicName)).distinct();
         const totalPartitions = group.members.flatMap((m) => m.assignments).sum((a) => a.partitionIds.length);
 
         return (
@@ -145,18 +145,12 @@ class GroupDetails extends PageComponent<{ groupId: string }> {
                                     title="State"
                                     valueRender={() => <GroupState group={group} />}
                                 />
-                                <ProtocolType group={group} />
-                                <Statistic title="Members" value={group.members.length} />
-                                <Statistic
-                                    title="Assigned Topics"
-                                    value={requiredTopics.length}
-                                />
                                 <Statistic
                                     title="Assigned Partitions"
                                     value={totalPartitions}
                                 />
+                                <ProtocolType group={group} />
                                 <Statistic title="Protocol Type" value={group.protocolType} />
-                                <Statistic title="Protocol" value={group.protocol} />
                                 <Statistic
                                     title="Coordinator ID"
                                     value={group.coordinatorId}
@@ -208,7 +202,8 @@ class GroupDetails extends PageComponent<{ groupId: string }> {
     }
 
     @computed get group() {
-        return api.consumerGroups.get(this.props.groupId);
+        const groupId = decodeURIComponent(this.props.groupId);
+        return api.consumerGroups.get(groupId);
     }
 
     @action editGroup() {
@@ -324,7 +319,7 @@ class GroupByTopics extends Component<{
                         <Button
                             size="small"
                             style={{ marginLeft: 'auto' }}
-                            onClick={() => appGlobal.history.push('/topics/' + g.topicName)}
+                            onClick={() => appGlobal.history.push(`/topics/${encodeURIComponent(g.topicName)}`)}
                         >View Topic</Button>
                     </div>
                 }>
@@ -472,7 +467,7 @@ class GroupByMembers extends Component<{ group: GroupDescription, onlyShowPartit
                                 width: 130, title: 'Topic', dataIndex: 'topicName', sorter: sortField('topicName'),
                                 render: (_, record) => <div
                                     className="hoverLink"
-                                    onClick={() => appGlobal.history.push('/topics/' + record.topicName)}>
+                                    onClick={() => appGlobal.history.push(`/topics/${encodeURIComponent(record.topicName)}`)}>
                                     {record.topicName}
                                 </div>
                             },

@@ -35,6 +35,7 @@ import AppContent from './components/layout/Content';
 import RequireAuth from './components/RequireAuth';
 import HistorySetter from './components/misc/HistorySetter';
 import { isEmbedded, setup } from './config';
+import { getBasePath } from './utils/env';
 
 const AppSidebar = observer(() => {
     const sidebarItems = createVisibleSidebarItems(APP_ROUTES);
@@ -49,7 +50,7 @@ const AppSidebar = observer(() => {
 const App = () => {
     setup({});
     return (
-        <BrowserRouter>
+        <BrowserRouter basename={getBasePath()}>
             <HistorySetter />
             <ChakraProvider theme={redpandaTheme}>
                 <ErrorBoundary>
@@ -58,7 +59,7 @@ const App = () => {
                             ? <AppContent />
                             : <Grid templateColumns="auto 1fr" minH="100vh">
                                 <AppSidebar />
-                                <Container width="full" maxWidth="1500px" as="main" p="8" zIndex={1}>
+                                <Container width="full" maxWidth="1500px" as="main" pt="8" px="12" zIndex={1}>
                                     <AppContent />
                                 </Container>
                             </Grid>

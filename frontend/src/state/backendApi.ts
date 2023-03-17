@@ -1,3 +1,4 @@
+
 /**
  * Copyright 2022 Redpanda Data, Inc.
  *
@@ -43,7 +44,9 @@ import {
     Topic, TopicConfigResponse, TopicConsumer, TopicDescription,
     TopicDocumentation, TopicDocumentationResponse, TopicMessage, TopicOffset,
     TopicPermissions, UserData, WrappedApiError, CreateACLRequest,
-    DeleteACLsRequest, RedpandaLicense, AclResource, GetUsersResponse, CreateUserRequest, PatchTopicConfigsRequest, ClusterOverview, BrokerWithConfigAndStorage, OverviewNewsEntry
+    DeleteACLsRequest, RedpandaLicense, AclResource, GetUsersResponse, CreateUserRequest,
+    PatchTopicConfigsRequest, CreateSecretResponse, ClusterOverview, BrokerWithConfigAndStorage,
+    OverviewNewsEntry
 } from './restInterfaces';
 import { uiState } from './uiState';
 import { config as appConfig } from '../config';
@@ -251,6 +254,28 @@ const apiStore = {
         await appConfig.fetch('./logout');
         this.userData = null;
     },
+    async refreshUserData() {
+        await appConfig.fetch('./api/users/me').then(async r => {
+            if (r.ok) {
+                api.userData = await r.json() as UserData;
+            } else if (r.status == 401) { // unauthorized / not logged in
+                api.userData = null;
+            } else if (r.status == 404) {
+                // not found: frontend is configured as business-version, but backend is non-business-version
+                // -> create a local fake user for debugging
+                uiState.isUsingDebugUserLogin = true;
+                api.userData = {
+                    canViewConsoleUsers: false,
+                    canListAcls: true,
+                    canListQuotas: true,
+                    canPatchConfigs: true,
+                    canReassignPartitions: true,
+                    seat: null as any,
+                    user: { providerID: -1, providerName: 'debug provider', id: 'debug', internalIdentifier: 'debug', meta: { avatarUrl: '', email: '', name: 'local fake user for debugging' } }
+                };
+            }
+        });
+    },
 
     // Make currently running requests observable
     activeRequests: [] as CacheEntry[],
@@ -276,7 +301,7 @@ const apiStore = {
                 }
             } : {})
         }
-        const url = `${appConfig.websocketBasePath}/topics/${searchRequest.topicName}/messages`;
+        const url = `${appConfig.websocketBasePath}/topics/${encodeURIComponent(searchRequest.topicName)}/messages`;
 
         console.debug('connecting to "' + url + '"');
 
@@ -414,7 +439,7 @@ const apiStore = {
     },
 
     async refreshTopicConfig(topicName: string, force?: boolean): Promise<void> {
-        const promise = cachedApiRequest<TopicConfigResponse | null>(`${appConfig.restBasePath}/topics/${topicName}/configuration`, force)
+        const promise = cachedApiRequest<TopicConfigResponse | null>(`${appConfig.restBasePath}/topics/${encodeURIComponent(topicName)}/configuration`, force)
             .then(v => {
                 if (!v) {
                     this.topicConfig.delete(topicName);
@@ -451,7 +476,7 @@ const apiStore = {
     },
 
     refreshTopicDocumentation(topicName: string, force?: boolean) {
-        cachedApiRequest<TopicDocumentationResponse>(`${appConfig.restBasePath}/topics/${topicName}/documentation`, force)
+        cachedApiRequest<TopicDocumentationResponse>(`${appConfig.restBasePath}/topics/${encodeURIComponent(topicName)}/documentation`, force)
             .then(v => {
                 const text = v.documentation.markdown == null ? null : decodeBase64(v.documentation.markdown);
                 v.documentation.text = text;
@@ -462,7 +487,7 @@ const apiStore = {
     refreshTopicPermissions(topicName: string, force?: boolean) {
         if (!AppFeatures.SINGLE_SIGN_ON) return; // without SSO there can't be a permissions endpoint
         if (this.userData?.user?.providerID == -1) return; // debug user
-        cachedApiRequest<TopicPermissions | null>(`${appConfig.restBasePath}/permissions/topics/${topicName}`, force)
+        cachedApiRequest<TopicPermissions | null>(`${appConfig.restBasePath}/permissions/topics/${encodeURIComponent(topicName)}`, force)
             .then(x => this.topicPermissions.set(topicName, x), addError);
     },
 
@@ -496,7 +521,7 @@ const apiStore = {
     },
 
     async deleteTopicRecordsFromMultiplePartitionOffsetPairs(topicName: string, pairs: Array<{ partitionId: number, offset: number; }>) {
-        return rest<DeleteRecordsResponseData>(`${appConfig.restBasePath}/topics/${topicName}/records`, {
+        return rest<DeleteRecordsResponseData>(`${appConfig.restBasePath}/topics/${encodeURIComponent(topicName)}/records`, {
             method: 'DELETE',
             headers: [
                 ['Content-Type', 'application/json']
@@ -578,7 +603,7 @@ const apiStore = {
     },
 
     refreshPartitionsForTopic(topicName: string, force?: boolean) {
-        cachedApiRequest<GetPartitionsResponse | null>(`${appConfig.restBasePath}/topics/${topicName}/partitions`, force)
+        cachedApiRequest<GetPartitionsResponse | null>(`${appConfig.restBasePath}/topics/${encodeURIComponent(topicName)}/partitions`, force)
             .then(response => {
                 if (response?.partitions) {
                     const partitionErrors: Array<{ id: number, partitionError: string; }> = [], waterMarksErrors: Array<{ id: number, waterMarksError: string; }> = [];
@@ -655,7 +680,7 @@ const apiStore = {
     },
 
     refreshTopicConsumers(topicName: string, force?: boolean) {
-        cachedApiRequest<GetTopicConsumersResponse>(`${appConfig.restBasePath}/topics/${topicName}/consumers`, force)
+        cachedApiRequest<GetTopicConsumersResponse>(`${appConfig.restBasePath}/topics/${encodeURIComponent(topicName)}/consumers`, force)
             .then(v => this.topicConsumers.set(topicName, v.topicConsumers), addError);
     },
 
@@ -752,7 +777,7 @@ const apiStore = {
     },
 
     refreshConsumerGroup(groupId: string, force?: boolean) {
-        cachedApiRequest<GetConsumerGroupResponse>(`${appConfig.restBasePath}/consumer-groups/${groupId}`, force)
+        cachedApiRequest<GetConsumerGroupResponse>(`${appConfig.restBasePath}/consumer-groups/${encodeURIComponent(groupId)}`, force)
             .then(v => {
                 addFrontendFieldsForConsumerGroup(v.consumerGroup);
                 this.consumerGroups.set(v.consumerGroup.groupId, v.consumerGroup);
@@ -1063,7 +1088,7 @@ const apiStore = {
     // PATCH /topics/configuration               // default config
     async changeTopicConfig(topicName: string | null, configs: PatchTopicConfigsRequest['configs']): Promise<void> {
         const url = topicName
-            ? `${appConfig.restBasePath}/topics/${topicName}/configuration`
+            ? `${appConfig.restBasePath}/topics/${encodeURIComponent(topicName)}/configuration`
             : `${appConfig.restBasePath}/topics/configuration`;
 
         const response = await appConfig.fetch(url, {
@@ -1077,8 +1102,8 @@ const apiStore = {
     },
 
     // AdditionalInfo = list of plugins
-    refreshClusterAdditionalInfo(clusterName: string, force?: boolean): void {
-        cachedApiRequest<ClusterAdditionalInfo | null>(`${appConfig.restBasePath}/kafka-connect/clusters/${clusterName}`, force)
+    refreshClusterAdditionalInfo(clusterName: string, force?: boolean): Promise<void> {
+        return cachedApiRequest<ClusterAdditionalInfo | null>(`${appConfig.restBasePath}/kafka-connect/clusters/${encodeURIComponent(clusterName)}`, force)
             .then(v => {
                 if (!v) {
                     this.connectAdditionalClusterInfo.delete(clusterName);
@@ -1159,7 +1184,7 @@ const apiStore = {
 
     async deleteConnector(clusterName: string, connector: string): Promise<void> {
         // DELETE "/kafka-connect/clusters/{clusterName}/connectors/{connector}"
-        const response = await appConfig.fetch(`${appConfig.restBasePath}/kafka-connect/clusters/${clusterName}/connectors/${connector}`, {
+        const response = await appConfig.fetch(`${appConfig.restBasePath}/kafka-connect/clusters/${encodeURIComponent(clusterName)}/connectors/${encodeURIComponent(connector)}`, {
             method: 'DELETE',
             headers: [
                 ['Content-Type', 'application/json']
@@ -1170,7 +1195,7 @@ const apiStore = {
 
     async pauseConnector(clusterName: string, connector: string): Promise<void> {
         // PUT  "/kafka-connect/clusters/{clusterName}/connectors/{connector}/pause"  (idempotent)
-        const response = await appConfig.fetch(`${appConfig.restBasePath}/kafka-connect/clusters/${clusterName}/connectors/${connector}/pause`, {
+        const response = await appConfig.fetch(`${appConfig.restBasePath}/kafka-connect/clusters/${encodeURIComponent(clusterName)}/connectors/${encodeURIComponent(connector)}/pause`, {
             method: 'PUT',
             headers: [
                 ['Content-Type', 'application/json']
@@ -1181,7 +1206,7 @@ const apiStore = {
 
     async resumeConnector(clusterName: string, connector: string): Promise<void> {
         // PUT  "/kafka-connect/clusters/{clusterName}/connectors/{connector}/resume" (idempotent)
-        const response = await appConfig.fetch(`${appConfig.restBasePath}/kafka-connect/clusters/${clusterName}/connectors/${connector}/resume`, {
+        const response = await appConfig.fetch(`${appConfig.restBasePath}/kafka-connect/clusters/${encodeURIComponent(clusterName)}/connectors/${encodeURIComponent(connector)}/resume`, {
             method: 'PUT',
             headers: [
                 ['Content-Type', 'application/json']
@@ -1192,7 +1217,7 @@ const apiStore = {
 
     async restartConnector(clusterName: string, connector: string): Promise<void> {
         // POST "/kafka-connect/clusters/{clusterName}/connectors/{connector}/restart"
-        const response = await appConfig.fetch(`${appConfig.restBasePath}/kafka-connect/clusters/${clusterName}/connectors/${connector}/restart`, {
+        const response = await appConfig.fetch(`${appConfig.restBasePath}/kafka-connect/clusters/${encodeURIComponent(clusterName)}/connectors/${encodeURIComponent(connector)}/restart`, {
             method: 'POST',
             headers: [
                 ['Content-Type', 'application/json']
@@ -1203,7 +1228,7 @@ const apiStore = {
 
     async updateConnector(clusterName: string, connector: string, config: object): Promise<void> {
         // PUT "/kafka-connect/clusters/{clusterName}/connectors/{connector}"
-        const response = await appConfig.fetch(`${appConfig.restBasePath}/kafka-connect/clusters/${clusterName}/connectors/${connector}`, {
+        const response = await appConfig.fetch(`${appConfig.restBasePath}/kafka-connect/clusters/${encodeURIComponent(clusterName)}/connectors/${encodeURIComponent(connector)}`, {
             method: 'PUT',
             headers: [
                 ['Content-Type', 'application/json']
@@ -1215,7 +1240,7 @@ const apiStore = {
 
     async restartTask(clusterName: string, connector: string, taskID: number): Promise<void> {
         // POST "/kafka-connect/clusters/{clusterName}/connectors/{connector}/tasks/{taskID}/restart"
-        const response = await appConfig.fetch(`${appConfig.restBasePath}/kafka-connect/clusters/${clusterName}/connectors/${connector}/tasks/${String(taskID)}/restart`, {
+        const response = await appConfig.fetch(`${appConfig.restBasePath}/kafka-connect/clusters/${encodeURIComponent(clusterName)}/connectors/${encodeURIComponent(connector)}/tasks/${String(taskID)}/restart`, {
             method: 'POST',
             headers: [
                 ['Content-Type', 'application/json']
@@ -1239,7 +1264,7 @@ const apiStore = {
 
     async createConnector(clusterName: string, connectorName: string, pluginClassName: string, config: object): Promise<void> {
         // POST "/kafka-connect/clusters/{clusterName}/connectors"
-        const response = await appConfig.fetch(`${appConfig.restBasePath}/kafka-connect/clusters/${clusterName}/connectors`, {
+        const response = await appConfig.fetch(`${appConfig.restBasePath}/kafka-connect/clusters/${encodeURIComponent(clusterName)}/connectors`, {
             method: 'POST',
             headers: [
                 ['Content-Type', 'application/json']
@@ -1318,12 +1343,51 @@ const apiStore = {
     },
 
     async deleteServiceAccount(principalId: string): Promise<void> {
-        const response = await appConfig.fetch(`${appConfig.restBasePath}/users/${principalId}`, {
+        const response = await appConfig.fetch(`${appConfig.restBasePath}/users/${encodeURIComponent(principalId)}`, {
             method: 'DELETE',
         });
 
         return parseOrUnwrap<void>(response, null);
     },
+
+    async createSecret(clusterName: string, connectorName: string, secretValue: string): Promise<CreateSecretResponse> {
+        const response = await appConfig.fetch(`${appConfig.restBasePath}/kafka-connect/clusters/${encodeURIComponent(clusterName)}/secrets`, {
+            method: 'POST',
+            headers: [
+                ['Content-Type', 'application/json']
+            ],
+            body: JSON.stringify({
+                connectorName,
+                clusterName,
+                secretData: secretValue,
+                labels: {
+                    component: 'connectors'
+                }
+            }),
+        });
+        return parseOrUnwrap<any>(response, null);
+    },
+
+     async updateSecret(clusterName: string, secretId: string, secretValue: string): Promise<void> {
+        const response = await appConfig.fetch(`${appConfig.restBasePath}/kafka-connect/clusters/${encodeURIComponent(clusterName)}/secrets/${encodeURIComponent(secretId)}`, {
+            method: 'PUT',
+            headers: [
+                ['Content-Type', 'application/json']
+            ],
+            body: JSON.stringify({
+                secretData: secretValue            }),
+        });
+        return parseOrUnwrap<any>(response, null);
+    },
+
+
+    async deleteSecret(clusterName: string, secretId: string): Promise<void> {
+        const response = await appConfig.fetch(`${appConfig.restBasePath}/kafka-connect/clusters/${encodeURIComponent(clusterName)}/secrets/${encodeURIComponent(secretId)}`, {
+            method: 'DELETE',
+        });
+        return parseOrUnwrap<void>(response, null);
+    },
+
 };
 
 function addFrontendFieldsForConnectCluster(cluster: ClusterConnectors) {
@@ -1433,9 +1497,12 @@ function normalizeAcls(acls: AclResource[]) {
 }
 
 export function aclRequestToQuery(request: GetAclsRequest): string {
-    const filters = ObjToKv(request).filter(kv => !!kv.value);
-    const query = filters.map(x => `${x.key}=${x.value}`).join('&');
-    return query;
+    const filters = ObjToKv(request)
+        .filter(kv => !!kv.value)
+        .map(x => [x.key, x.value]);
+
+    const searchParams = new URLSearchParams(filters);
+    return searchParams.toString();
 }
 
 export async function partialTopicConfigs(configKeys: string[], topics?: string[]): Promise<PartialTopicConfigsResponse> {

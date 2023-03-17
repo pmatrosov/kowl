@@ -110,11 +110,11 @@ func (d *deserializer) DeserializeRecord(record *kgo.Record) *deserializedRecord
 
 	headers := make(map[string]*deserializedPayload)
 	for _, header := range record.Headers {
-		headers[header.Key] = d.deserializePayload(header.Value, record.Topic, proto.RecordValue)
+		headers[header.Key] = d.deserializePayload(header.Value, record.Topic, proto.RecordValue, true)
 	}
 	return &deserializedRecord{
-		Key:     d.deserializePayload(record.Key, record.Topic, proto.RecordKey),
-		Value:   d.deserializePayload(record.Value, record.Topic, proto.RecordValue),
+		Key:     d.deserializePayload(record.Key, record.Topic, proto.RecordKey, true),
+		Value:   d.deserializePayload(record.Value, record.Topic, proto.RecordValue, false),
 		Headers: headers,
 	}
 }
@@ -127,7 +127,7 @@ func (d *deserializer) DeserializeRecord(record *kgo.Record) *deserializedRecord
 // will be displayed as hex string in the frontend.
 //
 //nolint:gocognit,cyclop,gocyclo // This function should be refactored and broken into multiple functions
-func (d *deserializer) deserializePayload(payload []byte, topicName string, recordType proto.RecordPropertyType) *deserializedPayload {
+func (d *deserializer) deserializePayload(payload []byte, topicName string, recordType proto.RecordPropertyType, skipMsgPack bool) *deserializedPayload {
 	// 0. Check if payload is empty / whitespace only
 	if len(payload) == 0 {
 		return &deserializedPayload{Payload: normalizedPayload{
@@ -239,7 +239,7 @@ func (d *deserializer) deserializePayload(payload []byte, topicName string, reco
 	}
 
 	// 6. Test for MessagePack (only if enabled and topic allowed)
-	if d.MsgPackService != nil && d.MsgPackService.IsTopicAllowed(topicName) {
+	if !skipMsgPack && d.MsgPackService != nil && d.MsgPackService.IsTopicAllowed(topicName) {
 		var obj interface{}
 		err := msgpack.Unmarshal(payload, &obj)
 		if err == nil {

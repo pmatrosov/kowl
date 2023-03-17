@@ -110,7 +110,7 @@ func (d *deserializer) DeserializeRecord(record *kgo.Record) *deserializedRecord
 
 	headers := make(map[string]*deserializedPayload)
 	for _, header := range record.Headers {
-		headers[header.Key] = d.deserializePayload(header.Value, record.Topic, proto.RecordValue, true)
+		headers[header.Key] = d.deserializePayload(header.Value, record.Topic, proto.RecordValue, false)
 	}
 	return &deserializedRecord{
 		Key:     d.deserializePayload(record.Key, record.Topic, proto.RecordKey, true),
